@@ -19,20 +19,20 @@ export interface CheckinEntry {
   emotions: string[];
   riskLevel: RiskLevel;
   messages: Message[];
-  formAnswers?: FormAnswers;
+  // formAnswers?: FormAnswers;
 }
 
-export interface FormAnswers {
-  q1: number; // No time for yourself (0-4)
-  q2: number; // Stressed managing care + other responsibilities (0-4)
-  q3: number; // Anger toward the person you care for (0-4)
-  q4: number; // Feel you've lost control (0-4)
-  q5: number; // Physical health suffered (0-4)
-  q6: number; // Feel isolated (0-4)
-  q7: number; // Uncertain about the future (0-4)
-  q8: number; // Feeling down or hopeless past 2 weeks (0-3)
-  q9: number; // Little interest or pleasure in things (0-3)
-}
+// export interface FormAnswers {
+//   q1: number; // No time for yourself (0-4)
+//   q2: number; // Stressed managing care + other responsibilities (0-4)
+//   q3: number; // Anger toward the person you care for (0-4)
+//   q4: number; // Feel you've lost control (0-4)
+//   q5: number; // Physical health suffered (0-4)
+//   q6: number; // Feel isolated (0-4)
+//   q7: number; // Uncertain about the future (0-4)
+//   q8: number; // Feeling down or hopeless past 2 weeks (0-3)
+//   q9: number; // Little interest or pleasure in things (0-3)
+// }
 
 export interface UserProfile {
   username: string;
