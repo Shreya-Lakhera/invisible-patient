@@ -13,10 +13,7 @@ const INITIAL_MESSAGE: Message = {
 };
 
 function sanitize(text: string): string {
-  return text
-    .replace(/—/g, ",")
-    .replace(/–/g, ",")
-    .trim();
+  return text.replace(/—/g, ",").replace(/–/g, ",").trim();
 }
 
 const ZBI_LABELS = ["Never", "Rarely", "Sometimes", "Frequently", "Nearly Always"];
@@ -35,7 +32,7 @@ export default function TalkPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionId] = useState(generateId);
-  const [showCrisis, setShowCrisis] = useState(false);
+  const [crisisTriggered, setCrisisTriggered] = useState(false);
   const [zbiAnswers, setZbiAnswers] = useState<number[]>([]);
   const [pendingZbiQ, setPendingZbiQ] = useState<number>(-1);
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
@@ -45,60 +42,14 @@ export default function TalkPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, pendingZbiQ]);
 
-  async function sendMessage(overrideText?: string) {
-    const text = (overrideText ?? input).trim();
-    if (!text || loading) return;
-    if (pendingZbiQ >= 0 && selectedRating === null) return;
-
-    const userMsg: Message = {
-      id: generateId(),
-      role: "user",
-      content: text,
-      timestamp: Date.now(),
-    };
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
-    setInput("");
-    setLoading(true);
-
-    let updatedZbiAnswers = [...zbiAnswers];
-    if (pendingZbiQ >= 0 && selectedRating !== null) {
-      updatedZbiAnswers = [...zbiAnswers, selectedRating];
-      setZbiAnswers(updatedZbiAnswers);
-      setPendingZbiQ(-1);
-      setSelectedRating(null);
-    }
-
-    await callApiAndStream(newMessages, updatedZbiAnswers);
-  }
-
-  async function sendMessageWithRating(rating: number, currentMessages: Message[], currentZbiAnswers: number[]) {
-    if (loading) return;
-
-    const text = ZBI_LABELS[rating];
-    const userMsg: Message = {
-      id: generateId(),
-      role: "user",
-      content: text,
-      timestamp: Date.now(),
-    };
-    const newMessages = [...currentMessages, userMsg];
-    setMessages(newMessages);
-    setInput("");
-    setLoading(true);
-
-    const updatedZbiAnswers = [...currentZbiAnswers, rating];
-    setZbiAnswers(updatedZbiAnswers);
-    setPendingZbiQ(-1);
-    setSelectedRating(null);
-
-    await callApiAndStream(newMessages, updatedZbiAnswers);
-  }
+  const canSend = pendingZbiQ >= 0
+    ? selectedRating !== null && input.trim().length > 0
+    : input.trim().length > 0;
 
   async function callApiAndStream(newMessages: Message[], updatedZbiAnswers: number[]) {
     const analysis = analyzeConversation(newMessages, updatedZbiAnswers);
     saveLastMentalState(analysis.mentalState);
-    if (analysis.riskLevel === "crisis") setShowCrisis(true);
+    if (analysis.riskLevel === "crisis") setCrisisTriggered(true);
 
     saveCheckin({
       id: sessionId,
@@ -108,6 +59,7 @@ export default function TalkPage() {
       zbiAnswers: updatedZbiAnswers,
       mentalState: analysis.mentalState,
       zbiEstimate: analysis.zbiEstimate,
+      resonanceScore: analysis.resonanceScore,
       emotions: analysis.emotions,
       riskLevel: analysis.riskLevel,
     });
@@ -165,29 +117,75 @@ export default function TalkPage() {
       zbiAnswers: updatedZbiAnswers,
       mentalState: analysis.mentalState,
       zbiEstimate: analysis.zbiEstimate,
+      resonanceScore: analysis.resonanceScore,
       emotions: analysis.emotions,
       riskLevel: analysis.riskLevel,
     });
   }
 
-  function handleRatingSelect(val: number) {
-    setSelectedRating(val);
-    // Pass current state directly to avoid stale closure issues
-    sendMessageWithRating(val, messages, zbiAnswers);
+  async function sendMessage() {
+    if (!canSend || loading) return;
+    const text = input.trim();
+    const userMsg: Message = {
+      id: generateId(),
+      role: "user",
+      content: pendingZbiQ >= 0
+        ? `[Rating: ${selectedRating} - ${ZBI_LABELS[selectedRating!]}] ${text}`
+        : text,
+      timestamp: Date.now(),
+    };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setInput("");
+    setLoading(true);
+
+    let updatedZbiAnswers = [...zbiAnswers];
+    if (pendingZbiQ >= 0 && selectedRating !== null) {
+      updatedZbiAnswers = [...zbiAnswers, selectedRating];
+      setZbiAnswers(updatedZbiAnswers);
+      setPendingZbiQ(-1);
+      setSelectedRating(null);
+    }
+
+    await callApiAndStream(newMessages, updatedZbiAnswers);
   }
+
+  const questionsLeft = 12 - zbiAnswers.length;
 
   return (
     <main className="min-h-screen bg-[#090d15] flex flex-col">
       <Navbar />
-      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full pt-20 pb-36 px-4">
-        <p className="text-center text-xs tracking-[0.2em] text-[#A09890] uppercase py-4">
-          Safe Space — Everything shared is private
-        </p>
 
+      <div className="fixed top-16 left-0 right-0 z-40 flex items-center justify-between px-6 py-2 bg-[#090d15]/90 backdrop-blur-sm border-b border-white/5">
+        <p className="text-xs text-[#A09890] tracking-[0.15em] uppercase">Safe Space</p>
+        {zbiAnswers.length < 12 && (
+          <div className="flex items-center gap-1.5">
+            {Array.from({ length: 12 }, (_, i) => (
+              <div key={i}
+                className="rounded-full transition-all duration-300"
+                style={{
+                  width: i < zbiAnswers.length ? 8 : 6,
+                  height: i < zbiAnswers.length ? 8 : 6,
+                  backgroundColor: i < zbiAnswers.length ? "#B2AC88" : "rgba(255,255,255,0.1)",
+                }}
+              />
+            ))}
+            <span className="text-[10px] text-[#A09890] ml-2">{questionsLeft} left</span>
+          </div>
+        )}
+        {zbiAnswers.length === 12 && (
+          <span className="text-[10px] text-[#B2AC88]">All questions answered</span>
+        )}
+      </div>
+
+      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full pt-28 pb-36 px-4">
         <div className="flex-1 flex flex-col gap-4 py-4">
           {messages.map((msg) => {
             const { clean, qIndex } = parseZbiTag(msg.content);
             const isActiveZbiMsg = qIndex !== null && qIndex === pendingZbiQ && msg.role === "assistant";
+            const displayContent = msg.role === "user"
+              ? clean.replace(/^\[Rating: \d+ - \w+\]\s*/, "")
+              : clean;
 
             return (
               <div key={msg.id}
@@ -201,10 +199,10 @@ export default function TalkPage() {
                 <div className="flex flex-col gap-3 max-w-sm">
                   <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
                     msg.role === "user"
-                      ? "bg-[#163054] text-[#F5F0E8]"
-                      : "bg-[#0D2137] text-[#D4CEBD] border border-white/5"
+                      ? "bg-[#1C3A5E] text-[#E8E4D8]"
+                      : "bg-[#111827] text-[#D4CEBD] border border-[#B2AC88]/10"
                   }`}>
-                    {clean || (
+                    {displayContent || (
                       msg.role === "assistant" && (
                         <span className="inline-flex gap-1">
                           <span className="w-1 h-1 bg-[#B2AC88] rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
@@ -217,24 +215,27 @@ export default function TalkPage() {
 
                   {isActiveZbiMsg && (
                     <div className="flex flex-col gap-2">
-                      <p className="text-xs text-[#A09890] pl-1">
-                        Choose how often you feel this way:
-                      </p>
-                      <div className="flex gap-1.5 flex-wrap">
+                      <p className="text-xs text-[#A09890] pl-1">How often do you feel this way?</p>
+                      <div className="flex gap-1.5">
                         {ZBI_LABELS.map((label, val) => (
                           <button key={val}
-                            onClick={() => handleRatingSelect(val)}
+                            onClick={() => setSelectedRating(val)}
                             disabled={loading}
-                            className={`flex flex-col items-center px-3 py-2 rounded-xl text-xs transition-all duration-200 border flex-1 min-w-[52px] ${
+                            className={`flex flex-col items-center px-2 py-2 rounded-xl text-xs transition-all duration-200 border flex-1 ${
                               selectedRating === val
                                 ? "bg-[#B2AC88]/25 border-[#B2AC88]/60 text-[#F5F0E8]"
                                 : "border-white/10 text-[#A09890] hover:border-white/25 hover:text-[#D4CEBD]"
                             }`}>
                             <span className="text-base font-light" style={{ fontFamily: "var(--font-display)" }}>{val}</span>
-                            <span className="text-[10px] mt-0.5 text-center leading-tight">{label}</span>
+                            <span className="text-[9px] mt-0.5 text-center leading-tight">{label}</span>
                           </button>
                         ))}
                       </div>
+                      {selectedRating !== null && (
+                        <p className="text-xs text-[#B2AC88]/60 pl-1">
+                          Selected: <strong>{ZBI_LABELS[selectedRating]}</strong>. Share a few words below, then send.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -245,26 +246,30 @@ export default function TalkPage() {
         </div>
       </div>
 
-      {zbiAnswers.length > 0 && (
-        <div className="fixed top-16 left-0 right-0 h-0.5 bg-white/5">
-          <div
-            className="h-full bg-[#B2AC88]/50 transition-all duration-500"
-            style={{ width: `${(zbiAnswers.length / 12) * 100}%` }}
-          />
-        </div>
-      )}
-
-      {showCrisis && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 max-w-sm w-full mx-4">
-          <div className="bg-[#1A0D0D] border border-[#8B5A5A]/40 rounded-2xl p-4 text-sm">
-            <p className="text-[#D4CEBD] mb-3">You don't have to carry this alone.</p>
-            <a href="tel:18884436933"
-              className="block text-center py-2 px-4 rounded-lg bg-[#8B5A5A]/20 text-[#D4CEBD] hover:bg-[#8B5A5A]/30 transition-all text-xs">
-              Caregiver Helpline: 1-888-443-6933
-            </a>
-            <button onClick={() => setShowCrisis(false)} className="w-full text-xs text-[#A09890] hover:text-[#D4CEBD] transition-colors mt-2">
-              Dismiss
-            </button>
+      {crisisTriggered && (
+        <div className="fixed bottom-24 left-0 right-0 px-4 z-50">
+          <div className="max-w-2xl mx-auto bg-[#1A0D0D] border border-[#8B5A5A]/50 rounded-2xl p-4">
+            <p className="text-[#F5F0E8] text-xs font-medium mb-2">
+              If you or someone is in immediate danger, please reach out now:
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <a href="tel:988" className="flex justify-between items-center py-2 px-3 rounded-xl bg-[#8B5A5A]/20 hover:bg-[#8B5A5A]/30 transition-all">
+                <span className="text-[#D4CEBD] text-xs">Crisis Lifeline</span>
+                <span className="text-[#B2AC88] text-xs font-medium">988</span>
+              </a>
+              <a href="sms:741741" className="flex justify-between items-center py-2 px-3 rounded-xl bg-[#8B5A5A]/20 hover:bg-[#8B5A5A]/30 transition-all">
+                <span className="text-[#D4CEBD] text-xs">Crisis Text</span>
+                <span className="text-[#B2AC88] text-xs font-medium">741741</span>
+              </a>
+              <a href="tel:18552273640" className="flex justify-between items-center py-2 px-3 rounded-xl bg-[#8B5A5A]/20 hover:bg-[#8B5A5A]/30 transition-all">
+                <span className="text-[#D4CEBD] text-xs">Caregiver Crisis</span>
+                <span className="text-[#B2AC88] text-xs font-medium">1-855-227-3640</span>
+              </a>
+              <a href="tel:911" className="flex justify-between items-center py-2 px-3 rounded-xl bg-[#8B5A5A]/20 hover:bg-[#8B5A5A]/30 transition-all">
+                <span className="text-[#D4CEBD] text-xs">Emergency</span>
+                <span className="text-[#B2AC88] text-xs font-medium">911</span>
+              </a>
+            </div>
           </div>
         </div>
       )}
@@ -273,7 +278,9 @@ export default function TalkPage() {
         <div className="max-w-2xl mx-auto flex flex-col gap-2">
           {pendingZbiQ >= 0 && (
             <p className="text-xs text-center text-[#A09890]">
-              Select a rating above to continue
+              {selectedRating === null
+                ? "Select a rating above, then share your thoughts"
+                : "Add a few words, then press send"}
             </p>
           )}
           <div className="flex gap-3">
@@ -281,18 +288,19 @@ export default function TalkPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  if (pendingZbiQ < 0) sendMessage();
-                }
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
               }}
-              placeholder="Share what's on your mind..."
-              disabled={pendingZbiQ >= 0}
-              className="flex-1 bg-[#0D2137] border border-white/10 rounded-2xl px-5 py-3.5 text-[#F5F0E8] placeholder-[#A09890] text-sm outline-none focus:border-[#B2AC88]/40 transition-all disabled:opacity-40"
+              placeholder={
+                pendingZbiQ >= 0 && selectedRating === null
+                  ? "Select a rating first..."
+                  : "Share what's on your mind..."
+              }
+              disabled={loading || (pendingZbiQ >= 0 && selectedRating === null)}
+              className="flex-1 bg-[#111827] border border-white/10 rounded-2xl px-5 py-3.5 text-[#F5F0E8] placeholder-[#A09890] text-sm outline-none focus:border-[#B2AC88]/40 transition-all disabled:opacity-40"
             />
             <button
-              onClick={() => sendMessage()}
-              disabled={loading || pendingZbiQ >= 0 || !input.trim()}
+              onClick={sendMessage}
+              disabled={!canSend || loading}
               className="w-12 h-12 rounded-2xl bg-[#B2AC88]/20 hover:bg-[#B2AC88]/30 disabled:opacity-40 transition-all flex items-center justify-center text-[#B2AC88]">
               <Send size={16} />
             </button>

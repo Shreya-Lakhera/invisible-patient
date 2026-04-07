@@ -10,7 +10,24 @@ const ZBI_CLUSTERS = {
 };
 
 const CRISIS_KEYWORDS = [
-  "want to die","don't want to be here","better off dead","end it","can't go on","no reason to live","suicide"
+  "want to die","kill myself","kill him","kill her","kill the patient",
+  "end my life","end it all","don't want to be here","better off dead",
+  "can't go on","no reason to live","suicide","suicidal","harm myself",
+  "hurt myself","want to disappear forever","want to kill","going to kill",
+  "hurt him","hurt her","hurt them",
+];
+
+const POSITIVE_WORDS = [
+  "proud","grateful","thankful","hopeful","better","stronger","managed","laughed",
+  "smiled","happy","joy","peaceful","calm","relieved","good","wonderful","love",
+  "strength","progress","improving","okay","fine","blessed","appreciate",
+];
+
+const NEGATIVE_WORDS = [
+  "terrible","awful","horrible","miserable","hopeless","worthless","useless",
+  "exhausted","drained","broken","defeated","trapped","suffocating","drowning",
+  "failing","lost","empty","numb","desperate","frightened","angry","furious",
+  "hate","disgusted","ashamed","guilty","alone","isolated","abandoned",
 ];
 
 function countMatches(text: string, keywords: string[]): number {
@@ -18,10 +35,42 @@ function countMatches(text: string, keywords: string[]): number {
   return keywords.filter((kw) => lower.includes(kw)).length;
 }
 
+export function calculateResonanceScore(allUserMessages: string[]): number {
+  if (!allUserMessages.length) return 50;
+  const combined = allUserMessages.join(" ");
+  const words = combined.split(/\s+/).filter((w) => w.length > 0);
+  const sentences = combined.split(/[.!?]+/).filter((s) => s.trim().length > 0);
+  if (!words.length) return 50;
+
+  // Sentiment ratio (40% weight)
+  const posCount = countMatches(combined, POSITIVE_WORDS);
+  const negCount = countMatches(combined, NEGATIVE_WORDS);
+  const total = posCount + negCount;
+  const sentimentRatio = total === 0 ? 0.5 : posCount / total;
+  const sentimentScore = sentimentRatio * 100;
+
+  // Lexical diversity / Type-Token Ratio (30% weight)
+  const uniqueWords = new Set(words.map((w) => w.toLowerCase().replace(/[^a-z]/g, "")));
+  const ttr = uniqueWords.size / words.length;
+  const ttrScore = Math.min(100, Math.max(0, ((ttr - 0.3) / 0.5) * 100));
+
+  // Mean sentence length (15% weight)
+  const avgSentLen = sentences.length > 0 ? words.length / sentences.length : 5;
+  const sentLenScore = avgSentLen < 3 ? 10 : avgSentLen < 6 ? 35 : avgSentLen < 10 ? 65 : avgSentLen < 20 ? 90 : 70;
+
+  // Elaboration ratio (15% weight)
+  const wordCountScore = Math.min(100, (words.length / 150) * 100);
+
+  return Math.min(100, Math.max(0, Math.round(
+    sentimentScore * 0.40 + ttrScore * 0.30 + sentLenScore * 0.15 + wordCountScore * 0.15
+  )));
+}
+
 export interface AnalysisResult {
   mentalState: MentalState;
   zbiEstimate: number;
   zbiAnswers: number[];
+  resonanceScore: number;
   emotions: string[];
   riskLevel: RiskLevel;
   dominantThemes: string[];
@@ -32,10 +81,8 @@ export function analyzeConversation(
   messages: { role: string; content: string }[],
   zbiAnswers: number[] = []
 ): AnalysisResult {
-  const userText = messages
-    .filter((m) => m.role === "user")
-    .map((m) => m.content)
-    .join(" ");
+  const userMessages = messages.filter((m) => m.role === "user").map((m) => m.content);
+  const userText = userMessages.join(" ");
 
   const zbiScores = {
     timeDeprivation:   countMatches(userText, ZBI_CLUSTERS.timeDeprivation) * 6,
@@ -47,10 +94,11 @@ export function analyzeConversation(
   };
 
   const zbiEstimate = zbiAnswers.length > 0
-    ? Math.round((zbiAnswers.reduce((a, b) => a + b, 0) / (zbiAnswers.length * 4)) * 48)
+    ? Math.round((zbiAnswers.reduce((a, b) => a + b, 0) / 48) * 48)
     : Math.min(48, Object.values(zbiScores).reduce((a, b) => a + b, 0));
 
   const hasCrisisSignals = countMatches(userText, CRISIS_KEYWORDS) > 0;
+  const resonanceScore = calculateResonanceScore(userMessages);
 
   const dominantThemes: string[] = [];
   if (zbiScores.guiltyAnger >= 8)     dominantThemes.push("Guilt-Anger Cycle");
@@ -75,26 +123,17 @@ export function analyzeConversation(
 
   let riskLevel: RiskLevel = "low";
   if (hasCrisisSignals)       riskLevel = "crisis";
-  else if (zbiEstimate >= 60) riskLevel = "high";
-  else if (zbiEstimate >= 40) riskLevel = "moderate";
+  else if (zbiEstimate >= 36) riskLevel = "high";
+  else if (zbiEstimate >= 24) riskLevel = "moderate";
 
-  const positiveCount = countMatches(userText, ["proud","managed","grateful","laughed","hopeful","better","strength"]);
-
+  const positiveCount = countMatches(userText, POSITIVE_WORDS);
   let mentalState: MentalState = "calm";
   if (hasCrisisSignals)                    mentalState = "overwhelmed";
   else if (zbiScores.guiltyAnger >= 8)     mentalState = "anxious";
   else if (zbiScores.socialIsolation >= 7) mentalState = "restless";
   else if (zbiScores.timeDeprivation >= 6) mentalState = "tired";
   else if (positiveCount >= 2)             mentalState = "hopeful";
-  else if (zbiEstimate > 10)               mentalState = "restless";
+  else if (zbiEstimate > 6)               mentalState = "restless";
 
-  return {
-    mentalState,
-    zbiEstimate,
-    zbiAnswers,
-    emotions,
-    riskLevel,
-    dominantThemes,
-    hasCrisisSignals,
-  };
+  return { mentalState, zbiEstimate, zbiAnswers, resonanceScore, emotions, riskLevel, dominantThemes, hasCrisisSignals };
 }

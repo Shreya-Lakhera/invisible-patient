@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, MessageCircle, BarChart2 } from "lucide-react";
+import { Home, MessageCircle, BarChart2, Users } from "lucide-react";
 
 const links = [
-  { href: "/",         label: "Home",     Icon: Home },
-  { href: "/talk",     label: "Talk",     Icon: MessageCircle },
+  { href: "/",       label: "Home",     Icon: Home },
+  { href: "/talk",   label: "Talk",     Icon: MessageCircle },
   { href: "/insights", label: "Insights", Icon: BarChart2 },
+  { href: "/forum",  label: "Circle",   Icon: Users },
 ];
 
 export default function Navbar() {
@@ -25,15 +26,12 @@ export default function Navbar() {
         {links.map(({ href, label, Icon }) => {
           const active = pathname === href;
           return (
-            <Link
-              key={href}
-              href={href}
+            <Link key={href} href={href}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all duration-200 ${
                 active
                   ? "bg-white/10 text-[#F5F0E8]"
                   : "text-[#A09890] hover:text-[#F5F0E8] hover:bg-white/5"
-              }`}
-            >
+              }`}>
               <Icon size={15} />
               {label}
             </Link>

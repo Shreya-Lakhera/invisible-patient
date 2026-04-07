@@ -15,6 +15,7 @@ export interface CheckinEntry {
   mentalState: MentalState;
   zbiEstimate: number;
   zbiAnswers: number[];
+  resonanceScore: number;
   emotions: string[];
   riskLevel: RiskLevel;
   messages: Message[];
